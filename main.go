@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -48,9 +47,8 @@ func initLogger() {
 		Level: slog.LevelDebug,
 		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
 			if a.Key == "time" {
-				a.Key = "timestamp"
+				a.Key = "@timestamp"
 			}
-
 			return a
 		},
 	})))
@@ -73,12 +71,24 @@ func main() {
 	port := os.Getenv("PORT")
 	appName := os.Getenv("APP_NAME")
 
-	router.GET("/", func(w http.ResponseWriter, req *http.Request) {
-		sessionId := Session(req.Context())
+	// GET /:id
 
-		json.NewEncoder(w).Encode(m{
+	router.GET("/hello/{id}", func(ctx IContext) error {
+		id := ctx.Param("id")
+		session := ctx.Session()
+
+		return ctx.JSON(http.StatusOK, m{
 			"message": "Hello, World!",
-			"session": sessionId,
+			"id":      id,
+			"session": session,
+		})
+	})
+
+	router.GET("/", func(ctx IContext) error {
+		session := ctx.Session()
+		return ctx.JSON(http.StatusOK, m{
+			"message": "Hello, World!",
+			"session": session,
 		})
 	})
 

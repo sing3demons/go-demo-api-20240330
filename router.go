@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"regexp"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -14,11 +16,11 @@ import (
 )
 
 type IRouter interface {
-	GET(pattern string, handler http.HandlerFunc)
-	POST(pattern string, handler http.HandlerFunc)
-	PUT(pattern string, handler http.HandlerFunc)
-	DELETE(pattern string, handler http.HandlerFunc)
-	PATCH(pattern string, handler http.HandlerFunc)
+	GET(pattern string, handler HandlerFunc)
+	POST(pattern string, handler HandlerFunc)
+	PUT(pattern string, handler HandlerFunc)
+	DELETE(pattern string, handler HandlerFunc)
+	PATCH(pattern string, handler HandlerFunc)
 	StartHTTP(appName, port string)
 }
 
@@ -28,27 +30,81 @@ type myRouter struct {
 
 func NewRouter() IRouter {
 	mux := http.NewServeMux()
+	// mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+	// 	w.WriteHeader(http.StatusOK)
+	// 	w.Write([]byte("OK"))
+	// })
 	return &myRouter{mux}
 }
 
-func (r *myRouter) GET(pattern string, handler http.HandlerFunc) {
-	r.HandleFunc("GET "+pattern, handler)
+func (r *myRouter) setParams(pattern string, req *http.Request) *http.Request {
+	param := `\{([^/]+)\}`
+	re := regexp.MustCompile(param)
+	matches := re.FindAllStringSubmatch(pattern, -1)
+	if matches == nil {
+		return req
+	}
+	p := strings.Split(pattern, "/")
+	u := strings.Split(req.URL.Path, "/")
+	paramMap := map[string]string{}
+	for i := 0; i < len(p); i++ {
+		if p[i] != "" && u[i] != "" {
+			paramMap[p[i]] = u[i]
+		}
+
+	}
+
+	for i, match := range matches {
+		if paramMap[match[i]] != "" {
+			req = req.WithContext(context.WithValue(req.Context(), ContextKey(match[i]), paramMap[match[i]]))
+		}
+	}
+	return req
 }
 
-func (r *myRouter) POST(pattern string, handler http.HandlerFunc) {
-	r.HandleFunc("POST "+pattern, handler)
+func (r *myRouter) GET(pattern string, handler HandlerFunc) {
+	r.HandleFunc("GET "+pattern, func(w http.ResponseWriter, req *http.Request) {
+		ctx := NewContext(w, r.setParams(pattern, req))
+		if err := handler(ctx); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	})
 }
 
-func (r *myRouter) PUT(pattern string, handler http.HandlerFunc) {
-	r.HandleFunc("PUT "+pattern, handler)
+func (r *myRouter) POST(pattern string, handler HandlerFunc) {
+	r.HandleFunc("POST "+pattern, func(w http.ResponseWriter, req *http.Request) {
+		ctx := NewContext(w, r.setParams(pattern, req))
+		if err := handler(ctx); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	})
 }
 
-func (r *myRouter) DELETE(pattern string, handler http.HandlerFunc) {
-	r.HandleFunc("DELETE "+pattern, handler)
+func (r *myRouter) PUT(pattern string, handler HandlerFunc) {
+	r.HandleFunc("PUT "+pattern, func(w http.ResponseWriter, r *http.Request) {
+		ctx := NewContext(w, r)
+		if err := handler(ctx); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	})
 }
 
-func (r *myRouter) PATCH(pattern string, handler http.HandlerFunc) {
-	r.HandleFunc("PATCH "+pattern, handler)
+func (r *myRouter) DELETE(pattern string, handler HandlerFunc) {
+	r.HandleFunc("DELETE "+pattern, func(w http.ResponseWriter, req *http.Request) {
+		ctx := NewContext(w, r.setParams(pattern, req))
+		if err := handler(ctx); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	})
+}
+
+func (r *myRouter) PATCH(pattern string, handler HandlerFunc) {
+	r.HandleFunc("PATCH "+pattern, func(w http.ResponseWriter, req *http.Request) {
+		ctx := NewContext(w, r.setParams(pattern, req))
+		if err := handler(ctx); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	})
 }
 
 const XSession = "X-Session"
@@ -57,6 +113,7 @@ type ContextKey string
 
 func Logger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
 		reqId := w.Header().Get(XSession)
 		if reqId == "" {
 			reqId = uuid.NewString()
@@ -67,11 +124,9 @@ func Logger(next http.Handler) http.Handler {
 		r = r.WithContext(ctx)
 		// Call the next handler
 		next.ServeHTTP(w, r)
-	})
-}
 
-func Session(ctx context.Context) string {
-	return ctx.Value(ContextKey(XSession)).(string)
+		log.Printf("%s %s %s %s %s\n", r.Method, r.RequestURI, r.RemoteAddr, time.Since(start).String(), reqId)
+	})
 }
 
 func (r *myRouter) StartHTTP(appName, port string) {
@@ -89,6 +144,10 @@ func (r *myRouter) StartHTTP(appName, port string) {
 	if writeTimeout != "" {
 		write, _ = strconv.Atoi(writeTimeout)
 	}
+
+	r.GET("/healthz", func(ctx IContext) error {
+		return ctx.Status(http.StatusOK)
+	})
 
 	var wait time.Duration
 
