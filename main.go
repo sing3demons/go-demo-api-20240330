@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sing3demons/demo-api/my"
 	"github.com/spf13/viper"
 )
 
@@ -66,14 +67,14 @@ func init() {
 type m map[string]any
 
 func main() {
-	router := NewRouter()
+	router := my.NewRouter()
 
 	port := os.Getenv("PORT")
 	appName := os.Getenv("APP_NAME")
 
 	// GET /:id
 
-	router.GET("/hello/{id}", func(ctx IContext) error {
+	router.GET("/hello/{id}", func(ctx my.IContext) error {
 		id := ctx.Param("id")
 		session := ctx.Session()
 
@@ -84,7 +85,7 @@ func main() {
 		})
 	})
 
-	router.GET("/", func(ctx IContext) error {
+	router.GET("/", func(ctx my.IContext) error {
 		session := ctx.Session()
 		return ctx.JSON(http.StatusOK, m{
 			"message": "Hello, World!",

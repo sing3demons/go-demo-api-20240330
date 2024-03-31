@@ -1,8 +1,11 @@
-package main
+package my
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -30,10 +33,6 @@ type myRouter struct {
 
 func NewRouter() IRouter {
 	mux := http.NewServeMux()
-	// mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-	// 	w.WriteHeader(http.StatusOK)
-	// 	w.Write([]byte("OK"))
-	// })
 	return &myRouter{mux}
 }
 
@@ -119,13 +118,38 @@ func Logger(next http.Handler) http.Handler {
 			reqId = uuid.NewString()
 			w.Header().Set(XSession, reqId)
 		}
+
+		query := r.URL.Query()
+		path := r.URL.Path
+
+		body, _ := io.ReadAll(r.Body)
+		r.Body = io.NopCloser(bytes.NewBuffer(body))
+
 		// Set the logger in the context
 		ctx := context.WithValue(r.Context(), ContextKey(XSession), reqId)
 		r = r.WithContext(ctx)
 		// Call the next handler
 		next.ServeHTTP(w, r)
 
-		log.Printf("%s %s %s %s %s\n", r.Method, r.RequestURI, r.RemoteAddr, time.Since(start).String(), reqId)
+		// respons
+
+		end := time.Now()
+		latency := start.Sub(end)
+
+		slog.Info("request",
+			slog.Any("app", os.Getenv("NAME")),
+			slog.Any("type", "summary"),
+			slog.Any("method", r.Method),
+			slog.Any("path", path),
+			slog.Any("query", query),
+			slog.Any("uri", r.RequestURI),
+			slog.Any("remote_addr", r.RemoteAddr),
+			slog.Any("latency", latency.String()),
+			slog.Any("session", reqId),
+			slog.Any("body", string(body)),
+			slog.Any("user_agent", r.UserAgent()),
+		)
+
 	})
 }
 
