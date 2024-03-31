@@ -1,0 +1,11 @@
+app:
+  name: "go-microservice"
+  port: 8001
+  timeout:
+    read: 10
+    write: 10
+    idle: 10
+  log:
+    level: "debug"
+    format: "json"
+    output: "stdout"
