@@ -29,6 +29,7 @@ func NewContext(w http.ResponseWriter, r *http.Request) IContext {
 func (c *myContext) Session() string {
 	return c.req.Context().Value(ContextKey(XSession)).(string)
 }
+
 func (c *myContext) Status(statusCode int) error {
 	c.w.WriteHeader(statusCode)
 	return nil
